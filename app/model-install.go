@@ -8,6 +8,7 @@ import (
 	"log"
 	"os"
 	"path"
+	"path/filepath"
 	"runtime"
 	"strings"
 )
@@ -22,6 +23,24 @@ const (
 	blobsPattern    = "blobs"
 )
 
+func ExpandTilde(path string) (string, error) {
+	if path == "" || path[0] != '~' {
+		return path, nil
+	}
+	if len(path) == 1 {
+		return os.UserHomeDir()
+	}
+	if path[1] == '/' || path[1] == '\\' {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", err
+		}
+		return filepath.Join(home, path[2:]), nil
+	}
+	// ~username 形式暂不支持
+	return "", fmt.Errorf("unsupported path format: %s", path)
+}
+
 func getModelsPath() string {
 	targetOS := runtime.GOOS
 	customModelStorePath := os.Getenv("OLLAMA_MODELS")
@@ -30,7 +49,11 @@ func getModelsPath() string {
 	}
 	switch targetOS {
 	case "darwin":
-		return macOSModelsPath
+		pathStr, err := ExpandTilde(macOSModelsPath)
+		if err != nil {
+			log.Fatalln(fmt.Errorf("error expanding models: %v", err))
+		}
+		return pathStr
 	case "linux":
 		snapStoreDir, err := os.Stat(snapStoreInstalledModelsPath)
 		if err != nil {
@@ -207,7 +230,9 @@ func InstallModel(modelName string, downloadedModelPath string) error {
 		}
 		defer blobFile.Close()
 
-		destinationBlobFile, err := os.Create(parseBlobsDestinationPath(downloadedModelPath, blobsFolderPath, blobName))
+		destinationBlobFileStr := parseBlobsDestinationPath(downloadedModelPath, blobsFolderPath, blobName)
+		destinationBlobFile, err := os.Create(destinationBlobFileStr)
+		log.Println("destinationBlobFile is ", destinationBlobFileStr)
 		if err != nil {
 			return fmt.Errorf("error creating blob file: %v", err.Error())
 		}
